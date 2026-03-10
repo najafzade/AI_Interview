@@ -1,63 +1,32 @@
+
 # Interview Loop AI
 
-An end-to-end, production-ready conversational interview agent platform.
+An end-to-end, production-ready conversational interview agent platform featuring real-time audio interaction.
 
 ## Features
 
-1.  **Stateful Interview Agent**: Conducts multi-step interviews using Genkit flows.
+1.  **Stateful Audio Agent**: Conducts multi-step interviews using Genkit flows.
     - Transitions: `WELCOME` → `ASKING_QUESTION` → `EVALUATING_RESPONSE` → `CLARIFYING` → `COMPLETED`.
-    - Handles probing questions dynamically based on response quality.
-2.  **Evaluator Dashboard**: Persistent storage for reviewing transcripts and audit trails.
-3.  **Production Feedback Loop**: Evaluators can rate and flag issues with specific sessions.
-4.  **Prompt Management**: Dynamic versioning system where updates change the behavior of future interviews.
-5.  **A/B Comparison Readiness**: Each session is tagged with a prompt version ID.
+    - Real-time Audio: Processes candidate speech and responds with AI-generated voice.
+2.  **Multimodal Pipeline**:
+    - **Transcription**: Uses Gemini 2.5 Flash to convert speech-to-text with high accuracy.
+    - **TTS (Text-to-Speech)**: Uses Gemini TTS to generate natural agent voices.
+3.  **Evaluator Dashboard**: Review full transcripts and audio-derived data.
+4.  **Production Feedback Loop**: Evaluators can rate and flag issues.
+5.  **Prompt Management**: Dynamic versioning system for agent behavioral updates.
+
+## Architecture Choice: State-Machine Orchestrator
+
+For this agent, I chose a **State-Machine Orchestrator** architecture over a linear LLM call.
+
+### Why?
+-   **Predictability**: By breaking the interview into distinct states (`ASKING`, `EVALUATING`, `CLARIFYING`), we can enforce strict constraints, such as asking exactly 3 technical questions before wrapping up.
+-   **Granularity**: Each state transition allows for side effects, such as generating speech (TTS) or logging audit trails, which would be difficult to manage in a single long-running session.
+-   **Resilience**: If an audio transcription fails or is ambiguous, the `CLARIFYING` state provides a robust fallback mechanism to recover the conversation without losing the overall progress of the interview.
+-   **Hybrid Interaction**: The orchestrator allows candidates to switch between voice and text input seamlessly within the same session.
 
 ## Setup & Running
 
-1.  **Environment Variables**:
-    Ensure `GOOGLE_GENAI_API_KEY` is set in your environment or `.env` file.
-
-2.  **Install Dependencies**:
-    ```bash
-    npm install
-    ```
-
-3.  **Run Development Server**:
-    ```bash
-    npm run dev
-    ```
-
-## Walkthrough Demo
-
-Follow these steps to experience the full loop:
-
-1.  **Run an Interview**:
-    - Go to `/interview`.
-    - Enter a name and complete the 3-question interview.
-    - Experience the AI probing for details if your answers are short.
-
-2.  **View Conversation**:
-    - Go to `/dashboard`.
-    - Find your session in the list.
-    - Click "Review Transcript" to see the full audit trail.
-
-3.  **Submit Feedback**:
-    - On the transcript page, use the right-side "Evaluator Feedback" panel.
-    - Rate the interview, flag any issues (e.g., "Missed Probing Opportunity"), and add comments.
-    - Click "Submit Feedback".
-
-4.  **Update Prompt Instructions**:
-    - Click "Manage Prompt Versions" in the Dashboard or go to `/admin/prompts`.
-    - Enter new instructions (e.g., "Be more strict and ask at least two clarifying questions").
-    - Deploy the new version.
-
-5.  **Verify New Behavior**:
-    - Start a new interview at `/interview`.
-    - Notice that the metadata now reflects the new prompt version.
-
-## Design Decisions
-
-- **Architecture**: A state-machine approach was chosen for the agent. This ensures that the interview follows a logical progression and allows for specific "Clarification" steps that don't prematurely consume one of the 3 main technical questions.
-- **Persistence**: For this prototype, a robust server-side "Mock DB" is used in `src/lib/db.ts` to ensure zero-setup friction for reviewers while demonstrating the schema for a real database like Firestore.
-- **Feedback Loop**: Feedback is granular (Quality, Fairness, Relevance) to provide data for automated prompt optimization in the future.
-- **Prompt Versioning**: Every session stores a snapshot of the prompt version active at the time of creation, ensuring auditability.
+1.  **Environment Variables**: Ensure `GOOGLE_GENAI_API_KEY` is set.
+2.  **Install Dependencies**: `npm install` (includes `wav` for audio processing).
+3.  **Run Dev**: `npm run dev`.
