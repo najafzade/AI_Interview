@@ -16,7 +16,6 @@ import { ArrowLeft, Flag, Star, CheckCircle, Info, MessageSquareQuote } from 'lu
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { DB } from '@/lib/db';
 
 export default function SessionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
