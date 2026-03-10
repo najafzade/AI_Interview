@@ -3,9 +3,10 @@ import { DB } from '@/lib/db';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = DB.sessions.get(params.id);
+  const { id } = await params;
+  const session = DB.sessions.get(id);
   if (!session) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }

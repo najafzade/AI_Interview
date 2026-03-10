@@ -37,18 +37,17 @@ export default function InterviewPage() {
     if (!candidateName.trim()) return;
     setIsLoading(true);
     try {
-      const id = await startInterviewAction(candidateName);
-      setSessionId(id);
+      const session = await startInterviewAction(candidateName);
+      setSessionId(session.id);
       setIsStarted(true);
-      // The first AI response is stored in state but we don't have it here yet
-      // In a real app, startInterviewAction would return the first message too.
-      // For this demo, we'll fetch the session to get history.
-      const initialResponse = await fetch(`/api/sessions/${id}`).then(r => r.json());
-      const history = initialResponse.state.conversationHistory.map((h: any) => ({
-        role: h.speaker,
+      
+      const history = session.state.conversationHistory.map((h: any) => ({
+        role: h.speaker as 'ai' | 'candidate',
         text: h.text
       }));
       setMessages(history);
+    } catch (error) {
+      console.error("Failed to start interview:", error);
     } finally {
       setIsLoading(false);
     }

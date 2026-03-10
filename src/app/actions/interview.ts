@@ -4,7 +4,7 @@ import { conductTechnicalInterview, ConductInterviewOutput, InterviewState } fro
 import { DB, InterviewSession, Feedback, PromptConfig } from "@/lib/db";
 import { v4 as uuidv4 } from 'uuid';
 
-export async function startInterviewAction(candidateName: string): Promise<string> {
+export async function startInterviewAction(candidateName: string): Promise<InterviewSession> {
   const activePrompt = DB.prompts.getActive();
   const initialOutput = await conductTechnicalInterview({});
   
@@ -20,7 +20,7 @@ export async function startInterviewAction(candidateName: string): Promise<strin
   };
 
   DB.sessions.save(session);
-  return sessionId;
+  return session;
 }
 
 export async function submitResponseAction(sessionId: string, text: string): Promise<ConductInterviewOutput> {

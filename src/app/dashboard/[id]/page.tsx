@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { getSessionAction, submitFeedbackAction } from '@/app/actions/interview';
 import { InterviewSession, Feedback } from '@/lib/db';
 import { Button } from '@/components/ui/button';
@@ -16,8 +16,10 @@ import { ArrowLeft, Flag, Star, CheckCircle, Info, MessageSquareQuote } from 'lu
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { DB } from '@/lib/db';
 
-export default function SessionDetailPage({ params }: { params: { id: string } }) {
+export default function SessionDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [session, setSession] = useState<InterviewSession | null>(null);
   const [rating, setRating] = useState({ quality: 5, fairness: 5, relevance: 5 });
   const [issues, setIssues] = useState<string[]>([]);
@@ -27,11 +29,11 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
 
   useEffect(() => {
     async function load() {
-      const data = await getSessionAction(params.id);
+      const data = await getSessionAction(id);
       if (data) setSession(data);
     }
     load();
-  }, [params.id]);
+  }, [id]);
 
   const handleSubmitFeedback = async () => {
     if (!session) return;
@@ -217,13 +219,6 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
                 {isSubmitting ? 'Saving...' : 'Submit Feedback'}
               </Button>
             </CardFooter>
-          </Card>
-
-          <Card className="bg-blue-50/50 border-blue-100">
-             <CardContent className="p-4 flex gap-3 text-xs text-blue-700">
-                <Info className="w-4 h-4 shrink-0" />
-                <p>Prompt instructions used: <strong>{DB.prompts.getActive().instructions}</strong>. This feedback will be used to automatically propose updates to v{Number(session.promptVersion.split('.')[0]) + 1}.</p>
-             </CardContent>
           </Card>
         </div>
       </div>
