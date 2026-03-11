@@ -1,8 +1,7 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useCollection } from '@/firebase';
+import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,10 +15,12 @@ import { format } from 'date-fns';
 export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [skillFilter, setSkillFilter] = useState('all');
+  const db = useFirestore();
 
   const sessionsQuery = useMemo(() => {
-    return query(collection(useFirestore()!, 'sessions'), orderBy('createdAt', 'desc'));
-  }, []);
+    if (!db) return null;
+    return query(collection(db, 'sessions'), orderBy('createdAt', 'desc'));
+  }, [db]);
 
   const { data: sessions = [], loading } = useCollection(sessionsQuery);
 
@@ -59,7 +60,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {loading ? <p>Loading sessions...</p> : filtered.map(s => (
+        {loading ? <p className="p-12 text-center text-muted-foreground">Loading sessions...</p> : filtered.map(s => (
           <Card key={s.id} className="group hover:shadow-lg transition-all border-2">
             <CardHeader>
               <div className="flex justify-between items-start">
@@ -75,6 +76,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         ))}
+        {!loading && filtered.length === 0 && (
+          <div className="col-span-full p-12 text-center border-2 border-dashed rounded-xl">
+            <p className="text-muted-foreground">No sessions found matching your criteria.</p>
+          </div>
+        )}
       </div>
     </div>
   );
