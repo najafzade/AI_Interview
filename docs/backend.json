@@ -1,0 +1,63 @@
+
+{
+  "entities": {
+    "InterviewSession": {
+      "title": "Interview Session",
+      "description": "Represents a single interview instance for a candidate.",
+      "type": "object",
+      "properties": {
+        "candidateName": { "type": "string" },
+        "skill": { "type": "string" },
+        "status": { "type": "string", "enum": ["IN_PROGRESS", "COMPLETED"] },
+        "state": { "type": "object" },
+        "promptVersion": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["candidateName", "skill", "status", "state", "promptVersion", "createdAt"]
+    },
+    "Feedback": {
+      "title": "Evaluator Feedback",
+      "description": "Feedback submitted by evaluators for a completed interview.",
+      "type": "object",
+      "properties": {
+        "interviewId": { "type": "string" },
+        "quality": { "type": "number" },
+        "fairness": { "type": "number" },
+        "relevance": { "type": "number" },
+        "issues": { "type": "array", "items": { "type": "string" } },
+        "comments": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["interviewId", "quality", "fairness", "relevance", "issues", "comments", "createdAt"]
+    },
+    "PromptConfig": {
+      "title": "Prompt Configuration",
+      "description": "A versioned set of instructions for the AI agent.",
+      "type": "object",
+      "properties": {
+        "version": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "instructions": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["version", "isActive", "instructions", "createdAt"]
+    }
+  },
+  "auth": {
+    "providers": ["google.com"]
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/InterviewSession" },
+      "description": "Interview session data"
+    },
+    "/feedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/Feedback" },
+      "description": "Feedback data"
+    },
+    "/prompt_configs/{configId}": {
+      "schema": { "$ref": "#/entities/PromptConfig" },
+      "description": "Prompt configuration data"
+    }
+  }
+}

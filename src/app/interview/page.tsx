@@ -1,8 +1,8 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { startInterviewAction, submitResponseAction } from '@/app/actions/interview';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { processTurnAction } from '@/app/actions/interview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -11,6 +11,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Loader2, Send, CheckCircle2, User, Mic, Square, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { useFirestore } from '@/firebase';
+import { doc, setDoc, collection, query, where, getDocs, limit, serverTimestamp } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Message {
   role: 'ai' | 'candidate';
@@ -18,6 +21,7 @@ interface Message {
 }
 
 export default function InterviewPage() {
+  const db = useFirestore();
   const [candidateName, setCandidateName] = useState('');
   const [isStarted, setIsStarted] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -27,16 +31,26 @@ export default function InterviewPage() {
   const [isComplete, setIsComplete] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [lastAudioUri, setLastAudioUri] = useState<string | null>(null);
+  const [activePrompt, setActivePrompt] = useState<any>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const stateRef = useRef<any>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+    async function loadConfig() {
+      if (!db) return;
+      const q = query(collection(db, 'prompt_configs'), where('isActive', '==', true), limit(1));
+      const snap = await getDocs(q);
+      if (!snap.empty) setActivePrompt(snap.docs[0].data());
     }
+    loadConfig();
+  }, [db]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const playAiAudio = (uri: string) => {
@@ -48,25 +62,38 @@ export default function InterviewPage() {
 
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!candidateName.trim()) return;
+    if (!candidateName.trim() || !db) return;
     setIsLoading(true);
     try {
-      const session = await startInterviewAction(candidateName);
-      setSessionId(session.id);
-      setIsStarted(true);
-      
-      const history = session.state.conversationHistory.map((h: any) => ({
-        role: h.speaker as 'ai' | 'candidate',
-        text: h.text
-      }));
-      setMessages(history);
+      const id = uuidv4();
+      const output = await processTurnAction({
+        sessionId: id,
+        systemInstructions: activePrompt?.instructions
+      });
 
-      if (session.initialAudio) {
-        setLastAudioUri(session.initialAudio);
-        setTimeout(() => playAiAudio(session.initialAudio!), 500);
+      const sessionData = {
+        id,
+        candidateName,
+        skill: output.newState.skill,
+        status: 'IN_PROGRESS',
+        state: output.newState,
+        promptVersion: activePrompt?.version || '1.0.0',
+        createdAt: new Date().toISOString()
+      };
+
+      setDoc(doc(db, 'sessions', id), sessionData);
+      
+      setSessionId(id);
+      stateRef.current = output.newState;
+      setIsStarted(true);
+      setMessages([{ role: 'ai', text: output.aiResponse }]);
+      
+      if (output.audioResponse) {
+        setLastAudioUri(output.audioResponse);
+        setTimeout(() => playAiAudio(output.audioResponse!), 500);
       }
     } catch (error) {
-      console.error("Failed to start interview:", error);
+      console.error(error);
     } finally {
       setIsLoading(false);
     }
@@ -78,94 +105,67 @@ export default function InterviewPage() {
       const recorder = new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
+      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       recorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64Audio = reader.result as string;
-          handleSend(undefined, base64Audio);
-        };
+        reader.onloadend = () => handleSend(undefined, reader.result as string);
       };
-
       recorder.start();
       setIsRecording(true);
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const handleSend = async (e?: React.FormEvent, audioUri?: string) => {
     if (e) e.preventDefault();
-    if ((!input.trim() && !audioUri) || isLoading || isComplete) return;
+    if ((!input.trim() && !audioUri) || isLoading || isComplete || !db) return;
 
-    const userMsg = input;
+    const userText = input;
     setInput('');
-    if (userMsg) {
-      setMessages(prev => [...prev, { role: 'candidate', text: userMsg }]);
-    }
+    if (userText) setMessages(prev => [...prev, { role: 'candidate', text: userText }]);
     setIsLoading(true);
 
     try {
-      const output = await submitResponseAction(sessionId!, userMsg || undefined, audioUri);
-      
-      // If we used audio, the output includes transcription
+      const output = await processTurnAction({
+        sessionId: sessionId!,
+        candidateResponse: userText,
+        audioDataUri: audioUri,
+        currentState: stateRef.current,
+        systemInstructions: activePrompt?.instructions
+      });
+
       if (audioUri && output.transcription) {
         setMessages(prev => [...prev, { role: 'candidate', text: output.transcription! }]);
       }
 
       setMessages(prev => [...prev, { role: 'ai', text: output.aiResponse }]);
+      stateRef.current = output.newState;
       
+      const updateData = {
+        state: output.newState,
+        status: output.isInterviewComplete ? 'COMPLETED' : 'IN_PROGRESS'
+      };
+      setDoc(doc(db, 'sessions', sessionId!), updateData, { merge: true });
+
       if (output.audioResponse) {
         setLastAudioUri(output.audioResponse);
         playAiAudio(output.audioResponse);
       }
 
-      if (output.isInterviewComplete) {
-        setIsComplete(true);
-      }
-    } catch (error) {
-      console.error("Error submitting response:", error);
-    } finally {
-      setIsLoading(false);
-    }
+      if (output.isInterviewComplete) setIsComplete(true);
+    } catch (e) { console.error(e); } finally { setIsLoading(false); }
   };
 
   if (!isStarted) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-background">
         <Card className="w-full max-w-md p-8 shadow-xl border-2">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-headline font-bold mb-2">Voice Interview</h2>
-            <p className="text-muted-foreground">Ready for your real-time audio assessment? Enter your name to begin.</p>
-          </div>
+          <h2 className="text-3xl font-headline font-bold text-center mb-8">AI Voice Interview</h2>
           <form onSubmit={handleStart} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Full Name</label>
-              <Input 
-                placeholder="John Doe" 
-                value={candidateName}
-                onChange={(e) => setCandidateName(e.target.value)}
-                required
-                className="h-12 text-lg"
-              />
-            </div>
-            <Button type="submit" className="w-full h-12 text-lg" disabled={isLoading}>
-              {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 'Start Interview'}
+            <Input placeholder="Full Name" value={candidateName} onChange={e => setCandidateName(e.target.value)} required h-12 />
+            <Button type="submit" className="w-full h-12" disabled={isLoading}>
+              {isLoading ? <Loader2 className="animate-spin" /> : 'Start Interview'}
             </Button>
           </form>
         </Card>
@@ -176,130 +176,41 @@ export default function InterviewPage() {
   return (
     <div className="h-screen flex flex-col bg-background">
       <audio ref={audioPlayerRef} hidden />
-      
-      <header className="border-b bg-white p-4 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <User className="text-primary w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="font-headline font-semibold text-lg">{candidateName}</h1>
-            <p className="text-xs text-muted-foreground flex items-center">
-              <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
-              Audio Session Active
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {lastAudioUri && (
-            <Button variant="outline" size="sm" onClick={() => playAiAudio(lastAudioUri)}>
-              <Volume2 className="w-4 h-4 mr-1" /> Replay Agent
-            </Button>
-          )}
-          <Link href="/">
-            <Button variant="ghost" size="sm">Exit</Button>
-          </Link>
-        </div>
+      <header className="border-b bg-white p-4 flex justify-between items-center">
+        <h1 className="font-bold">{candidateName}</h1>
+        <Link href="/"><Button variant="ghost">Exit</Button></Link>
       </header>
 
-      <ScrollArea className="flex-1 p-4 md:p-8">
-        <div className="max-w-3xl mx-auto space-y-6">
+      <ScrollArea className="flex-1 p-4">
+        <div className="max-w-2xl mx-auto space-y-4">
           {messages.map((m, i) => (
-            <div key={i} className={cn(
-              "flex w-full animate-in fade-in slide-in-from-bottom-2 duration-300",
-              m.role === 'candidate' ? "justify-end" : "justify-start"
-            )}>
-              <div className={cn(
-                "flex max-w-[85%] gap-3",
-                m.role === 'candidate' ? "flex-row-reverse" : "flex-row"
-              )}>
-                <Avatar className="w-8 h-8 mt-1 shrink-0">
-                  <AvatarFallback className={m.role === 'ai' ? "bg-primary text-white" : "bg-accent text-white"}>
-                    {m.role === 'ai' ? 'AI' : 'C'}
-                  </AvatarFallback>
-                </Avatar>
-                <div className={cn(
-                  "p-4 rounded-2xl shadow-sm",
-                  m.role === 'candidate' 
-                    ? "bg-accent text-white rounded-tr-none" 
-                    : "bg-white border rounded-tl-none text-foreground"
-                )}>
-                  <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">{m.text}</p>
-                </div>
+            <div key={i} className={cn("flex", m.role === 'candidate' ? "justify-end" : "justify-start")}>
+              <div className={cn("p-4 rounded-xl max-w-[80%]", m.role === 'candidate' ? "bg-primary text-white" : "bg-white border")}>
+                {m.text}
               </div>
             </div>
           ))}
-          {isLoading && (
-            <div className="flex justify-start animate-in fade-in duration-300">
-               <div className="flex max-w-[85%] gap-3">
-                <Avatar className="w-8 h-8 mt-1 shrink-0">
-                  <AvatarFallback className="bg-primary text-white">AI</AvatarFallback>
-                </Avatar>
-                <div className="bg-white border p-4 rounded-2xl rounded-tl-none shadow-sm flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce [animation-delay:0.4s]" />
-                </div>
-              </div>
-            </div>
-          )}
-          {isComplete && (
-            <div className="flex flex-col items-center justify-center p-8 space-y-4 animate-in zoom-in duration-500">
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-                <CheckCircle2 className="w-10 h-10 text-green-600" />
-              </div>
-              <h2 className="text-2xl font-headline font-bold">Interview Completed</h2>
-              <p className="text-muted-foreground text-center">Your audio performance has been transcribed and stored for review.</p>
-              <Link href="/">
-                <Button variant="outline" size="lg">Return Home</Button>
-              </Link>
-            </div>
-          )}
+          {isLoading && <Loader2 className="animate-spin mx-auto" />}
+          {isComplete && <div className="text-center font-bold p-8">Interview Complete!</div>}
           <div ref={scrollRef} />
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t bg-white">
-        <div className="max-w-3xl mx-auto flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            {!isRecording ? (
-              <Button 
-                onClick={startRecording} 
-                disabled={isLoading || isComplete}
-                className="flex-1 h-16 text-lg bg-primary hover:bg-primary/90 flex items-center justify-center gap-2"
-              >
-                <Mic className="w-6 h-6" /> Tap to Speak
-              </Button>
-            ) : (
-              <Button 
-                onClick={stopRecording} 
-                className="flex-1 h-16 text-lg bg-red-600 hover:bg-red-700 animate-pulse flex items-center justify-center gap-2"
-              >
-                <Square className="w-6 h-6 fill-white" /> Stop & Send
-              </Button>
-            )}
-          </div>
-
-          <div className="relative flex items-center space-x-2">
-            <Input 
-              placeholder={isComplete ? "Interview closed" : "Or type your response here..."}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={isLoading || isComplete || isRecording}
-              className="flex-1 h-12 pr-12 text-base rounded-xl"
-            />
-            <Button 
-              onClick={() => handleSend()}
-              size="icon" 
-              disabled={!input.trim() || isLoading || isComplete || isRecording}
-              className="h-10 w-10 absolute right-1 rounded-lg"
-            >
-              <Send className="w-5 h-5" />
+      <div className="p-4 bg-white border-t">
+        <div className="max-w-2xl mx-auto space-y-2">
+          {!isRecording ? (
+            <Button onClick={startRecording} className="w-full h-16" disabled={isLoading || isComplete}>
+              <Mic className="mr-2" /> Speak
             </Button>
+          ) : (
+            <Button onClick={() => mediaRecorderRef.current?.stop()} className="w-full h-16 bg-red-500 animate-pulse">
+              <Square className="mr-2" /> Stop
+            </Button>
+          )}
+          <div className="flex gap-2">
+            <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Type response..." disabled={isLoading || isComplete} />
+            <Button onClick={() => handleSend()} disabled={!input.trim() || isLoading || isComplete}><Send /></Button>
           </div>
-          <p className="text-center text-[10px] text-muted-foreground mt-1 uppercase tracking-wider font-semibold">
-            Real-time Audio Prototyping • Gemini 2.5 Flash
-          </p>
         </div>
       </div>
     </div>
