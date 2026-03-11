@@ -1,32 +1,47 @@
-
 # Interview Loop AI
 
-An end-to-end, production-ready conversational interview agent platform featuring real-time audio interaction.
+An end-to-end, production-ready conversational interview agent platform.
+
+## Architecture: Stateful Agent Orchestrator
+
+This platform uses a **State-Machine Orchestrator** to manage the interview flow. 
+- **Reasoning**: Unlike simple chat interfaces, technical interviews require strict adherence to a structure (e.g., exactly 3 questions, specific assessment criteria). 
+- **State Machine**: The agent transitions through states: `WELCOME` → `ASKING_QUESTION` → `EVALUATING_RESPONSE` → `CLARIFYING` → `COMPLETED`.
+- **Hybrid Input**: Supports both real-time audio (transcribed by Gemini) and text input.
 
 ## Features
 
-1.  **Stateful Audio Agent**: Conducts multi-step interviews using Genkit flows.
-    - Transitions: `WELCOME` → `ASKING_QUESTION` → `EVALUATING_RESPONSE` → `CLARIFYING` → `COMPLETED`.
-    - Real-time Audio: Processes candidate speech and responds with AI-generated voice.
-2.  **Multimodal Pipeline**:
-    - **Transcription**: Uses Gemini 2.5 Flash to convert speech-to-text with high accuracy.
-    - **TTS (Text-to-Speech)**: Uses Gemini TTS to generate natural agent voices.
-3.  **Evaluator Dashboard**: Review full transcripts and audio-derived data.
-4.  **Production Feedback Loop**: Evaluators can rate and flag issues.
-5.  **Prompt Management**: Dynamic versioning system for agent behavioral updates.
-
-## Architecture Choice: State-Machine Orchestrator
-
-For this agent, I chose a **State-Machine Orchestrator** architecture over a linear LLM call.
-
-### Why?
--   **Predictability**: By breaking the interview into distinct states (`ASKING`, `EVALUATING`, `CLARIFYING`), we can enforce strict constraints, such as asking exactly 3 technical questions before wrapping up.
--   **Granularity**: Each state transition allows for side effects, such as generating speech (TTS) or logging audit trails, which would be difficult to manage in a single long-running session.
--   **Resilience**: If an audio transcription fails or is ambiguous, the `CLARIFYING` state provides a robust fallback mechanism to recover the conversation without losing the overall progress of the interview.
--   **Hybrid Interaction**: The orchestrator allows candidates to switch between voice and text input seamlessly within the same session.
+- **Stateful Flow**: Strictly asks 3 questions and probes for depth if answers are ambiguous.
+- **Multimodal Pipeline**: Transcription (Gemini Flash) + Logic (Genkit) + TTS (Gemini TTS).
+- **Prompt Versioning**: Admins can update system instructions in real-time. Each interview logs the version used.
+- **Evaluator Dashboard**: Filtering, discovery, and transcript review with feedback persistence.
 
 ## Setup & Running
 
-1.  **Environment Variables**: Ensure `GOOGLE_GENAI_API_KEY` is set.
-2.  **Install Dependencies**: `npm install` (includes `wav` for audio processing).
-3.  **Run Dev**: `npm run dev`.
+1. **Environment**: Ensure `GOOGLE_GENAI_API_KEY` is set in `.env`.
+2. **Install**: `npm install`.
+3. **Run Dev**: `npm run dev`.
+4. **Docker**: `docker build -t interview-loop .` and `docker run -p 3000:3000 interview-loop`.
+
+## Requirements Walkthrough (Step-by-Step)
+
+### 1. Run an Interview
+Go to `/interview`, enter your name, and start. Use the "Tap to Speak" button to answer. Note how the AI might ask you to elaborate if your answer is too short (Requirement 1 & 2).
+
+### 2. View Conversation & Submit Feedback
+Go to `/dashboard`. Find your session. Click "Review Interview" to see the full transcript and audio markers (Requirement 3 & 4). Use the side panel to rate and flag issues.
+
+### 3. Update Prompt Version
+Go to `/admin/prompts`. Update the system instructions (e.g., "Be very strict and formal"). Save a new version (Requirement 5).
+
+### 4. Verify Update
+Start a new interview at `/interview`. Observe the change in AI personality or behavior (Requirement 5).
+
+## Testing
+- Core logic resides in `src/ai/flows/conduct-technical-interview.ts`.
+- State transitions are verified by checking the `newState` object in `processTurnAction`.
+- To run logic simulations, use `npm run genkit:dev` to open the Genkit UI.
+
+## Observability
+- **Health Check**: Available at `/api/health` (implemented via simple route).
+- **Logging**: Errors in TTS/Transcription are logged to the server console with descriptive context.

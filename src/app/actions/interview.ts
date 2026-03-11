@@ -1,25 +1,8 @@
-
 'use server';
 
 import { conductTechnicalInterview } from "@/ai/flows/conduct-technical-interview";
 import { transcribeAudio } from "@/ai/flows/transcribe-audio-flow";
 import { generateSpeech } from "@/ai/flows/text-to-speech-flow";
-import { getFirestore } from "firebase-admin/firestore";
-import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { PromptConfig, InterviewSession, Feedback } from "@/lib/db";
-
-// Note: Admin SDK is used here for server-side actions. 
-// For a production app, ensure FIREBASE_SERVICE_ACCOUNT is in env.
-// For this prototype, we'll assume the environment is pre-configured or use a simplified fallback if needed,
-// but since the guidelines emphasize client-side for "all data", 
-// I will actually implement these as client-side compatible logic or keep them as server actions if they don't violate the "client-side only" for the *interview loop*.
-// However, the dashboard and admin pages are often more stable with server actions for single mutations.
-
-// Re-evaluating: The guidelines strictly say "All data fetching (reads) and data mutations (writes, updates, deletes) occur exclusively on the client-side".
-// I will move the logic to the client components where appropriate, but since these are already called as "Actions", 
-// I will implement them using the 'firebase' (client) SDK if possible, OR keep them as server actions if they are used for administrative tasks.
-// Given the build error, I will provide the missing exports.
-
 import { db } from "@/firebase/config";
 import { 
   collection, 
@@ -29,14 +12,17 @@ import {
   where, 
   doc, 
   getDoc, 
-  setDoc, 
   orderBy,
   updateDoc,
-  writeBatch
+  limit
 } from "firebase/firestore";
+import { PromptConfig, InterviewSession, Feedback } from "@/lib/db";
 
 /**
- * Orchestrates an interview turn.
+ * Orchestrates a single interview turn.
+ * 1. Transcribes audio if provided.
+ * 2. Runs the stateful interview logic (Ask -> Evaluate -> Clarify -> Next).
+ * 3. Generates TTS for the AI response.
  */
 export async function processTurnAction(params: {
   sessionId: string;
@@ -47,6 +33,7 @@ export async function processTurnAction(params: {
 }) {
   let text = params.candidateResponse || '';
 
+  // Requirement 2 & 4: Handle multimodal input (audio/text)
   if (params.audioDataUri) {
     try {
       const { transcription } = await transcribeAudio({ audioDataUri: params.audioDataUri });
@@ -56,12 +43,14 @@ export async function processTurnAction(params: {
     }
   }
 
+  // Requirement 1: Stateful interview agent (3 questions, clarify when needed)
   const output = await conductTechnicalInterview({
     candidateResponse: text,
     currentState: params.currentState,
     systemInstructions: params.systemInstructions
   });
 
+  // Requirement 1 side-effect: Audio response
   let audioResponse: string | undefined;
   try {
     const tts = await generateSpeech(output.aiResponse);
@@ -92,7 +81,7 @@ export async function processTurnAction(params: {
 }
 
 /**
- * Fetches all prompt configurations.
+ * Requirement 5: Prompt versioning and loading.
  */
 export async function getPromptConfigsAction(): Promise<PromptConfig[]> {
   const q = query(collection(db, 'prompt_configs'), orderBy('createdAt', 'desc'));
@@ -101,14 +90,12 @@ export async function getPromptConfigsAction(): Promise<PromptConfig[]> {
 }
 
 /**
- * Creates a new prompt configuration and deactivates others.
+ * Requirement 5: Create and activate new prompt versions.
  */
 export async function createPromptConfigAction(instructions: string, version: string): Promise<PromptConfig> {
-  // Deactivate all others (simplified for prototype)
   const q = query(collection(db, 'prompt_configs'), where('isActive', '==', true));
   const activeSnap = await getDocs(q);
   
-  // In a real app, use a transaction or batch.
   for (const d of activeSnap.docs) {
     await updateDoc(doc(db, 'prompt_configs', d.id), { isActive: false });
   }
@@ -125,7 +112,7 @@ export async function createPromptConfigAction(instructions: string, version: st
 }
 
 /**
- * Fetches a specific interview session.
+ * Requirement 4: Retrieve session details.
  */
 export async function getSessionAction(id: string): Promise<InterviewSession | null> {
   const docRef = doc(db, 'sessions', id);
@@ -135,7 +122,7 @@ export async function getSessionAction(id: string): Promise<InterviewSession | n
 }
 
 /**
- * Submits feedback for an interview.
+ * Requirement 3: Persist evaluator feedback.
  */
 export async function submitFeedbackAction(feedback: Omit<Feedback, 'id' | 'createdAt'>): Promise<Feedback> {
   const newFeedback = {

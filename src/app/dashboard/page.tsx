@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -9,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, User, ArrowRight, FilterX, Loader2 } from 'lucide-react';
+import { Search, User, ArrowRight, FilterX, Loader2, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 
@@ -18,6 +17,7 @@ export default function DashboardPage() {
   const [skillFilter, setSkillFilter] = useState('all');
   const db = useFirestore();
 
+  // Correctly stable query reference
   const sessionsQuery = useMemo(() => {
     if (!db) return null;
     return query(collection(db, 'sessions'), orderBy('createdAt', 'desc'));
@@ -25,6 +25,7 @@ export default function DashboardPage() {
 
   const { data: sessions = [], loading } = useCollection(sessionsQuery);
 
+  // Requirement: Discovery and filtering (by name, skill)
   const filtered = useMemo(() => {
     return sessions.filter(s => {
       const matchSearch = s.candidateName?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -40,10 +41,14 @@ export default function DashboardPage() {
           <h1 className="text-4xl font-headline font-bold text-primary">Evaluator Dashboard</h1>
           <p className="text-muted-foreground">Audit interview performance and version prompts.</p>
         </div>
-        <Link href="/admin/prompts"><Button variant="outline">Manage Prompts</Button></Link>
+        <Link href="/admin/prompts">
+          <Button variant="outline" className="gap-2">
+            <Settings className="w-4 h-4" /> Manage Prompts
+          </Button>
+        </Link>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4 p-4 bg-white rounded-xl border">
+      <div className="grid md:grid-cols-3 gap-4 p-4 bg-white rounded-xl border shadow-sm">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
@@ -63,15 +68,15 @@ export default function DashboardPage() {
           </SelectContent>
         </Select>
         <Button variant="ghost" onClick={() => { setSearchTerm(''); setSkillFilter('all'); }}>
-          <FilterX className="mr-2 w-4 h-4" /> Clear
+          <FilterX className="mr-2 w-4 h-4" /> Clear filters
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {loading ? (
           <div className="col-span-full flex flex-col items-center justify-center p-24 text-muted-foreground">
             <Loader2 className="w-8 h-8 animate-spin mb-4" />
-            <p>Loading sessions from dataset...</p>
+            <p>Fetching interview sessions...</p>
           </div>
         ) : filtered.map(s => (
           <Card key={s.id} className="group hover:shadow-lg transition-all border-2">
@@ -89,11 +94,11 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="bg-muted p-2 rounded mb-4 text-sm">
-                Assessed Skill: <b className="text-primary">{s.skill}</b>
+                Skill: <b className="text-primary">{s.skill}</b>
               </div>
               <Link href={`/dashboard/${s.id}`}>
                 <Button className="w-full">
-                  Review Transcript <ArrowRight className="ml-2 w-4 h-4" />
+                  Review Interview <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
             </CardContent>
