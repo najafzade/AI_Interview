@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -8,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Calendar, User, ArrowRight, FilterX } from 'lucide-react';
+import { Search, User, ArrowRight, FilterX, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 
@@ -45,7 +46,12 @@ export default function DashboardPage() {
       <div className="grid md:grid-cols-3 gap-4 p-4 bg-white rounded-xl border">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search candidates..." className="pl-9" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <Input 
+            placeholder="Search candidates..." 
+            className="pl-9" 
+            value={searchTerm} 
+            onChange={e => setSearchTerm(e.target.value)} 
+          />
         </div>
         <Select value={skillFilter} onValueChange={setSkillFilter}>
           <SelectTrigger><SelectValue placeholder="Skill Filter" /></SelectTrigger>
@@ -56,29 +62,46 @@ export default function DashboardPage() {
             <SelectItem value="Collaboration & Teamwork">Collaboration & Teamwork</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="ghost" onClick={() => { setSearchTerm(''); setSkillFilter('all'); }}><FilterX className="mr-2 w-4 h-4" /> Clear</Button>
+        <Button variant="ghost" onClick={() => { setSearchTerm(''); setSkillFilter('all'); }}>
+          <FilterX className="mr-2 w-4 h-4" /> Clear
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {loading ? <p className="p-12 text-center text-muted-foreground">Loading sessions...</p> : filtered.map(s => (
+        {loading ? (
+          <div className="col-span-full flex flex-col items-center justify-center p-24 text-muted-foreground">
+            <Loader2 className="w-8 h-8 animate-spin mb-4" />
+            <p>Loading sessions from dataset...</p>
+          </div>
+        ) : filtered.map(s => (
           <Card key={s.id} className="group hover:shadow-lg transition-all border-2">
             <CardHeader>
               <div className="flex justify-between items-start">
                 <Badge variant={s.status === 'COMPLETED' ? 'default' : 'secondary'}>{s.status}</Badge>
-                <span className="text-[10px] font-mono">v{s.promptVersion}</span>
+                <span className="text-[10px] font-mono text-muted-foreground">v{s.promptVersion}</span>
               </div>
-              <CardTitle className="flex items-center gap-2 mt-2"><User className="w-4 h-4" /> {s.candidateName}</CardTitle>
-              <CardDescription>{format(new Date(s.createdAt), 'PPP p')}</CardDescription>
+              <CardTitle className="flex items-center gap-2 mt-2 font-headline">
+                <User className="w-4 h-4 text-primary" /> {s.candidateName}
+              </CardTitle>
+              <CardDescription>
+                {s.createdAt ? format(new Date(s.createdAt), 'PPP p') : 'N/A'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="bg-muted p-2 rounded mb-4 text-sm">Skill: <b>{s.skill}</b></div>
-              <Link href={`/dashboard/${s.id}`}><Button className="w-full">Review <ArrowRight className="ml-2 w-4 h-4" /></Button></Link>
+              <div className="bg-muted p-2 rounded mb-4 text-sm">
+                Assessed Skill: <b className="text-primary">{s.skill}</b>
+              </div>
+              <Link href={`/dashboard/${s.id}`}>
+                <Button className="w-full">
+                  Review Transcript <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         ))}
         {!loading && filtered.length === 0 && (
-          <div className="col-span-full p-12 text-center border-2 border-dashed rounded-xl">
-            <p className="text-muted-foreground">No sessions found matching your criteria.</p>
+          <div className="col-span-full p-24 text-center border-2 border-dashed rounded-xl">
+            <p className="text-muted-foreground text-lg">No sessions found matching your criteria.</p>
           </div>
         )}
       </div>

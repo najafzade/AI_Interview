@@ -3,7 +3,7 @@
   "entities": {
     "InterviewSession": {
       "title": "Interview Session",
-      "description": "Represents a single interview instance for a candidate.",
+      "description": "Represents a single interview instance for a candidate, including transcript and state.",
       "type": "object",
       "properties": {
         "candidateName": { "type": "string" },
@@ -11,13 +11,14 @@
         "status": { "type": "string", "enum": ["IN_PROGRESS", "COMPLETED"] },
         "state": { "type": "object" },
         "promptVersion": { "type": "string" },
+        "audioDataUri": { "type": "string", "description": "The latest audio recording from the candidate." },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["candidateName", "skill", "status", "state", "promptVersion", "createdAt"]
     },
     "Feedback": {
       "title": "Evaluator Feedback",
-      "description": "Feedback submitted by evaluators for a completed interview.",
+      "description": "Persisted feedback and ratings from evaluators.",
       "type": "object",
       "properties": {
         "interviewId": { "type": "string" },
@@ -32,7 +33,7 @@
     },
     "PromptConfig": {
       "title": "Prompt Configuration",
-      "description": "A versioned set of instructions for the AI agent.",
+      "description": "Versioned system instructions for the interview agent.",
       "type": "object",
       "properties": {
         "version": { "type": "string" },
@@ -48,16 +49,16 @@
   },
   "firestore": {
     "/sessions/{sessionId}": {
-      "schema": { "$ref": "#/entities/InterviewSession" },
-      "description": "Interview session data"
+      "schema": { "$ref": "#/backend/entities/InterviewSession" },
+      "description": "Collection of all interview sessions"
     },
     "/feedback/{feedbackId}": {
-      "schema": { "$ref": "#/entities/Feedback" },
-      "description": "Feedback data"
+      "schema": { "$ref": "#/backend/entities/Feedback" },
+      "description": "Collection of evaluator feedback"
     },
     "/prompt_configs/{configId}": {
-      "schema": { "$ref": "#/entities/PromptConfig" },
-      "description": "Prompt configuration data"
+      "schema": { "$ref": "#/backend/entities/PromptConfig" },
+      "description": "Versioned system prompts"
     }
   }
 }
