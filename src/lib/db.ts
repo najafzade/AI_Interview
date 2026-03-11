@@ -32,3 +32,23 @@ export interface PromptConfig {
   instructions: string;
   createdAt: string;
 }
+
+
+export interface FeedbackRecord {
+  id: string;
+  sessionId: string;
+  evaluatorId: string;
+  overallRating: number;
+  fairnessRating?: number;
+  relevanceRating?: number;
+  flags?: string[];
+  notes?: string;
+  comparisonSessionId?: string;
+  preferredSessionId?: string;
+  createdAt: string;
+}
+
+
+export const DB = {
+  sessions: new Map<string, InterviewSession>(),
+};

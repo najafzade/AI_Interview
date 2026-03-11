@@ -4,8 +4,10 @@
 import { useState, useEffect, use } from 'react';
 import { getFirestore, useDoc } from '@/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { InterviewSession, InterviewTurn } from '@/lib/db';
+import { getFeedbackForSessionAction, submitFeedbackAction } from '@/app/actions/interview';
+import { FeedbackRecord } from '@/lib/db';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -26,9 +28,42 @@ import { cn } from '@/lib/utils';
 export default function SessionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const db = getFirestore();
-  const { data: session, loading } = useDoc<InterviewSession>(doc(db, 'sessions', id));
+  const { data: session, loading } = useDoc(doc(db, 'sessions', id));
   const [activeTurn, setActiveTurn] = useState<number | null>(null);
   const { toast } = useToast();
+  const [feedback, setFeedback] = useState<FeedbackRecord[]>([]);
+  const [overallRating, setOverallRating] = useState(4);
+  const [fairnessRating, setFairnessRating] = useState(4);
+  const [relevanceRating, setRelevanceRating] = useState(4);
+  const [flagsInput, setFlagsInput] = useState('');
+  const [notes, setNotes] = useState('');
+
+
+
+  useEffect(() => {
+    async function loadFeedback() {
+      const data = await getFeedbackForSessionAction(id);
+      setFeedback(data);
+    }
+    loadFeedback();
+  }, [id]);
+
+  const handleSubmitFeedback = async () => {
+    await submitFeedbackAction({
+      sessionId: id,
+      evaluatorId: 'dashboard-evaluator',
+      overallRating,
+      fairnessRating,
+      relevanceRating,
+      flags: flagsInput.split(',').map((f) => f.trim()).filter(Boolean),
+      notes,
+    });
+    const data = await getFeedbackForSessionAction(id);
+    setFeedback(data);
+    setFlagsInput('');
+    setNotes('');
+    toast({ title: 'Feedback submitted', description: 'Evaluation persisted successfully.' });
+  };
 
   const handleUpdateTurnEval = async (index: number, field: string, value: any) => {
     if (!session || !db) return;
@@ -196,6 +231,19 @@ export default function SessionDetailPage({ params }: { params: Promise<{ id: st
               <div className="space-y-2">
                 <Label className="text-xs font-bold text-muted-foreground uppercase">Audio Samples</Label>
                 <div className="text-sm font-medium">{session.history.filter(h => !!h.audioDataUri).length} Captured</div>
+              </div>
+              <Separator />
+              <div className="space-y-3">
+                <Label className="text-xs font-bold text-muted-foreground uppercase">Submit Conversation Feedback</Label>
+                <div className="grid grid-cols-3 gap-2 text-[10px]">
+                  <Input type="number" min={1} max={5} value={overallRating} onChange={(e) => setOverallRating(Number(e.target.value))} placeholder="Overall" />
+                  <Input type="number" min={1} max={5} value={fairnessRating} onChange={(e) => setFairnessRating(Number(e.target.value))} placeholder="Fairness" />
+                  <Input type="number" min={1} max={5} value={relevanceRating} onChange={(e) => setRelevanceRating(Number(e.target.value))} placeholder="Relevance" />
+                </div>
+                <Input value={flagsInput} onChange={(e) => setFlagsInput(e.target.value)} placeholder="flags (comma separated)" />
+                <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="optional notes" />
+                <Button onClick={handleSubmitFeedback} size="sm" className="w-full">Save Feedback</Button>
+                <div className="text-xs text-muted-foreground">Stored entries: {feedback.length}</div>
               </div>
               <Separator />
               <div className="text-[10px] text-muted-foreground italic">
