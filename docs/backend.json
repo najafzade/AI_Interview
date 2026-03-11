@@ -3,33 +3,36 @@
   "entities": {
     "InterviewSession": {
       "title": "Interview Session",
-      "description": "Represents a single interview instance for a candidate, including transcript and state.",
+      "description": "A complete record of an interview, including multi-modal history and per-turn metadata for model evaluation.",
       "type": "object",
       "properties": {
         "candidateName": { "type": "string" },
         "skill": { "type": "string" },
         "status": { "type": "string", "enum": ["IN_PROGRESS", "COMPLETED"] },
-        "state": { "type": "object" },
-        "promptVersion": { "type": "string" },
-        "audioDataUri": { "type": "string", "description": "The latest audio recording from the candidate." },
+        "promptVersion": { "type": "string", "description": "The specific version of instructions used by the agent." },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "speaker": { "type": "string", "enum": ["ai", "candidate"] },
+              "text": { "type": "string", "description": "The transcribed text or model response." },
+              "audioDataUri": { "type": "string", "description": "The raw audio source for this turn." },
+              "evaluations": {
+                "type": "object",
+                "properties": {
+                  "asrRating": { "type": "number", "description": "1-5 rating of transcription accuracy." },
+                  "ttsRating": { "type": "number", "description": "1-5 rating of voice quality." },
+                  "logicRating": { "type": "number", "description": "1-5 rating of model reasoning." },
+                  "flags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["candidateName", "skill", "status", "state", "promptVersion", "createdAt"]
-    },
-    "Feedback": {
-      "title": "Evaluator Feedback",
-      "description": "Persisted feedback and ratings from evaluators.",
-      "type": "object",
-      "properties": {
-        "interviewId": { "type": "string" },
-        "quality": { "type": "number" },
-        "fairness": { "type": "number" },
-        "relevance": { "type": "number" },
-        "issues": { "type": "array", "items": { "type": "string" } },
-        "comments": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["interviewId", "quality", "fairness", "relevance", "issues", "comments", "createdAt"]
+      "required": ["candidateName", "skill", "status", "promptVersion", "createdAt"]
     },
     "PromptConfig": {
       "title": "Prompt Configuration",
@@ -50,11 +53,7 @@
   "firestore": {
     "/sessions/{sessionId}": {
       "schema": { "$ref": "#/backend/entities/InterviewSession" },
-      "description": "Collection of all interview sessions"
-    },
-    "/feedback/{feedbackId}": {
-      "schema": { "$ref": "#/backend/entities/Feedback" },
-      "description": "Collection of evaluator feedback"
+      "description": "Collection of all interview sessions with embedded turn-level evaluation data."
     },
     "/prompt_configs/{configId}": {
       "schema": { "$ref": "#/backend/entities/PromptConfig" },
