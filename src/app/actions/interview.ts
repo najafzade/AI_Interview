@@ -17,7 +17,8 @@ import {
   updateDoc,
   setDoc
 } from "firebase/firestore";
-import { PromptConfig, InterviewSession, InterviewTurn } from "@/lib/db";
+import { PromptConfig, InterviewSession, InterviewTurn, FeedbackRecord } from "@/lib/db";
+import { buildFeedbackPayload } from "@/lib/feedback";
 
 export async function processTurnAction(params: {
   sessionId: string;
@@ -99,4 +100,78 @@ export async function createPromptConfigAction(instructions: string, version: st
 
   const docRef = await addDoc(collection(db, 'prompt_configs'), newConfig);
   return { id: docRef.id, ...newConfig };
+}
+
+
+export async function createSessionAction(params: {
+  candidateName: string;
+  initialState: any;
+  promptVersion: string;
+}): Promise<InterviewSession> {
+  const id = crypto.randomUUID();
+  const sessionData: InterviewSession = {
+    id,
+    candidateName: params.candidateName,
+    skill: params.initialState?.skill || 'Problem Solving',
+    status: 'IN_PROGRESS',
+    state: params.initialState,
+    promptVersion: params.promptVersion,
+    createdAt: new Date().toISOString(),
+    history: [],
+  };
+  await setDoc(doc(db, 'sessions', id), sessionData);
+  return sessionData;
+}
+
+export async function appendTurnsToSessionAction(params: {
+  sessionId: string;
+  state: any;
+  isInterviewComplete: boolean;
+  candidateTurn: InterviewTurn;
+  aiTurn: InterviewTurn;
+}) {
+  const ref = doc(db, 'sessions', params.sessionId);
+  const current = await getDoc(ref);
+  if (!current.exists()) throw new Error('Session not found');
+  const session = current.data() as InterviewSession;
+  const mergedHistory = [...(session.history || []), params.candidateTurn, params.aiTurn];
+
+  await updateDoc(ref, {
+    history: mergedHistory,
+    state: params.state,
+    status: params.isInterviewComplete ? 'COMPLETED' : 'IN_PROGRESS',
+  });
+}
+
+export async function submitFeedbackAction(params: {
+  sessionId: string;
+  evaluatorId: string;
+  overallRating: number;
+  fairnessRating?: number;
+  relevanceRating?: number;
+  flags?: string[];
+  notes?: string;
+  comparisonSessionId?: string;
+  preferredSessionId?: string;
+}): Promise<FeedbackRecord> {
+  const payload = buildFeedbackPayload({
+    sessionId: params.sessionId,
+    evaluatorId: params.evaluatorId,
+    overallRating: params.overallRating,
+    fairnessRating: params.fairnessRating,
+    relevanceRating: params.relevanceRating,
+    flags: params.flags || [],
+    notes: params.notes || '',
+    comparisonSessionId: params.comparisonSessionId,
+    preferredSessionId: params.preferredSessionId,
+  });
+
+  const ref = await addDoc(collection(db, 'feedback'), payload);
+  return { id: ref.id, ...payload };
+}
+
+export async function getFeedbackForSessionAction(sessionId: string): Promise<FeedbackRecord[]> {
+  const q = query(collection(db, 'feedback'), where('sessionId', '==', sessionId), orderBy('createdAt', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as FeedbackRecord));
 }

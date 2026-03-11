@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { processTurnAction } from '@/app/actions/interview';
+import { appendTurnsToSessionAction, createSessionAction, processTurnAction } from '@/app/actions/interview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -12,8 +12,8 @@ import { Loader2, Send, Mic, Square, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useFirestore } from '@/firebase';
-import { doc, setDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { v4 as uuidv4 } from 'uuid';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { resolveActivePrompt } from '@/lib/prompt-config';
 
 interface Message {
   role: 'ai' | 'candidate';
@@ -44,7 +44,8 @@ export default function InterviewPage() {
       if (!db) return;
       const q = query(collection(db, 'prompt_configs'), where('isActive', '==', true), limit(1));
       const snap = await getDocs(q);
-      if (!snap.empty) setActivePrompt(snap.docs[0].data());
+      const configs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+      setActivePrompt(resolveActivePrompt(configs));
     }
     loadConfig();
   }, [db]);
@@ -65,25 +66,19 @@ export default function InterviewPage() {
     if (!candidateName.trim() || !db) return;
     setIsLoading(true);
     try {
-      const id = uuidv4();
+      const bootstrapId = 'bootstrap';
       const output = await processTurnAction({
-        sessionId: id,
+        sessionId: bootstrapId,
         systemInstructions: activePrompt?.instructions
       });
 
-      const sessionData = {
-        id,
+      const sessionData = await createSessionAction({
         candidateName,
-        skill: output.newState.skill,
-        status: 'IN_PROGRESS',
-        state: output.newState,
+        initialState: output.newState,
         promptVersion: activePrompt?.version || '1.0.0',
-        createdAt: new Date().toISOString()
-      };
+      });
 
-      await setDoc(doc(db, 'sessions', id), sessionData);
-      
-      setSessionId(id);
+      setSessionId(sessionData.id);
       stateRef.current = output.newState;
       setIsStarted(true);
       setMessages([{ role: 'ai', text: output.aiResponse }]);
@@ -149,12 +144,13 @@ export default function InterviewPage() {
 
       setMessages(prev => [...prev, { role: 'ai', text: output.aiResponse }]);
       
-      // Persist the full state (including audio references) to Firestore
-      const updateData = {
+      await appendTurnsToSessionAction({
+        sessionId: sessionId!,
         state: output.newState,
-        status: output.isInterviewComplete ? 'COMPLETED' : 'IN_PROGRESS'
-      };
-      await setDoc(doc(db, 'sessions', sessionId!), updateData, { merge: true });
+        isInterviewComplete: output.isInterviewComplete,
+        candidateTurn: output.candidateTurn,
+        aiTurn: output.aiTurn,
+      });
 
       if (output.audioResponse) {
         playAudio(output.audioResponse);
